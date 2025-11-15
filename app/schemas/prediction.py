@@ -15,6 +15,17 @@ class PredictionInputSchema(BaseModel):
     rotational_speed: float = Field(..., description="Kecepatan rotasi mesin (dalam RPM).")
     torque: float = Field(..., description="Torsi mesin (dalam Nm).")
     tool_wear: int = Field(..., description="Tingkat keausan alat (dalam menit).")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "air_temperature": 301.5,
+                "process_temperature": 310.8,
+                "rotational_speed": 1500,
+                "torque": 40.5,
+                "tool_wear": 50
+            }
+        }
 
 class PredictionOutputSchema(BaseModel):
     """ Data keluaran (output) dari hasil prediksi kondisi mesin. """

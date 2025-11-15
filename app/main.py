@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response, status
 from app.api.v1.api import api_router
 import uvicorn
 
@@ -14,10 +14,15 @@ def create_app() -> FastAPI:
         version="0.1.0"
     )
 
-    # Register router versi 1
     app.include_router(api_router, prefix="/api/v1")
 
-    # Root endpoint (health check)
+    @app.get('/favicon.ico', include_in_schema=False)
+    async def favicon():
+        """
+        Mengembalikan respons 204 No Content untuk permintaan favicon.
+        """
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
     @app.get("/", tags=["Root"])
     def root():
         """
