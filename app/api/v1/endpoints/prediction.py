@@ -1,83 +1,69 @@
-"""
-Modul endpoint untuk API prediksi.
-
-File ini menyediakan logika sederhana (dummy model) 
-untuk memperbaiki kondisi mesin berdasarkan data sensor.
-
-"""
-
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from app.schemas.prediction import PredictionInputSchema, PredictionOutputSchema
+from app.services.prediction_service import prediction_service
+import logging
 
+logger = logging.getLogger(__name__)
 
-# Inisialisasi router API
 router = APIRouter()
 
-@router.post (
-    "/predict", 
+@router.post(
+    "/predict",
     response_model=PredictionOutputSchema,
     summary="Prediksi Kondisi Mesin",
-    description="Mengembalikan hasil prediksi kondisi mesin berdasarkan data sensor yang diberikan.",   
+    description="Mengembalikan hasil prediksi kondisi mesin berdasarkan data sensor menggunakan model LSTM.",
 )
 
 async def predict_failure(data: PredictionInputSchema) -> PredictionOutputSchema:
     """
     Fungsi utama untuk memproses data sensor dan menghasilkan prediksi kondisi mesin.
 
-    Argumen:
+    Args:
         data (PredictionInputSchema): Data masukan dari sensor mesin.
 
-    Mengembalikan:
-        PredictionOutputSchema: Hasil prediksi kondisi mesin beserta probabilitas dan pesan penjelasan. 
-    
+    Returns:
+        PredictionOutputSchema: Hasil prediksi kondisi mesin beserta probabilitas dan pesan penjelasan.
+
+    Raises:
+        HTTPException: Jika terjadi kesalahan saat prediksi
     """
+    try:
+        result = prediction_service.predict(data)
 
-    # Hitung skor resiko berdasarkan nilai sensor
-    risk_score = _hitung_skor_risiko(data)
+        logger.info(f"Prediction result: {result.model_dump()}")
 
-    # Tentukan hasil prediksi berdasarkan skor resiko
-    status, probabilitas, pesan = _tentukan_status_mesin(risk_score)
+        return result
 
-    # Kembalikan hasil dalam format schema output
-    return PredictionOutputSchema(
-        machine_status=status,
-        probability=probabilitas,
-        message=pesan
-    )
+    except Exception as e:
+        logger.error(f"Error dalam prediksi: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Terjadi kesalahan saat melakukan prediksi: {str(e)}"
+        )
 
-def _hitung_skor_risiko(data: PredictionInputSchema) -> int:
+@router.get(
+    "/model-status",
+    summary="Status Model LSTM",
+    description="Mengembalikan status model LSTM yang digunakan."
+)
+async def get_model_status():
     """
-    Menghitung skor resiko berdasarkan nilai data sensor yang diterima.
-    Semakin tinggi nilai sensor tertenu, semakin besar potensi kerusakan.
-    
+    Endpoint untuk mengecek status model LSTM.
     """
-    skor = 0
+    try:
+        model_loaded = prediction_service.model is not None
+        model_path = prediction_service.settings.MODEL_FILE_PATH
 
-    # Cek suhu udara atau suhu proses terlalu tinggi
-    if data.air_temperature > 300 or data.process_temperature > 310:
-        skor += 2
+        return {
+            "model_loaded": model_loaded,
+            "model_path": model_path,
+            "feature_columns": prediction_service.feature_columns,
+            "message": "Model loaded successfully" if model_loaded else "Using fallback prediction logic"
+        }
 
-    # Cek kecepatan dan torsi tinggi
-    if data.rotational_speed > 1500 or data.torque > 50:
-        skor += 3
-
-    # Cek tingkat keausan alat besar
-    if data.tool_wear > 200:
-        skor += 2
-
-    return skor
-
-
-def _tentukan_status_mesin(skor: int) -> tuple[str, float, str]:
-    
-    """
-    Menentukan status mesin berdasarkan skor resiko yang dihitung.
-    Mengembalikan tiga nilai: status, probrabilitas, dan pesan penjelasan.
-    
-    """
-        
-    if skor <= 2:
-        return ("Normal", 0.1, "Mesin dalam kondisi normal dan stabil.")
-    elif skor <= 4:
-        return ("Warning", 0.6, "Waspada, kondisi mesin menunjukkan tanda keausan.")
-    return ("Failure", 0.9, "Kemungkinan besar mesin akan mengalami kerusakan.")
+    except Exception as e:
+        logger.error(f"Error mendapatkan status model: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Terjadi kesalahan: {str(e)}"
+        )

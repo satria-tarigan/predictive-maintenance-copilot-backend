@@ -1,7 +1,3 @@
-"""
-Modul skema untuk API Chatbot.
-"""
-
 from pydantic import BaseModel, Field
 
 class ChatInputSchema(BaseModel):

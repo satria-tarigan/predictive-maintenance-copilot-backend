@@ -1,49 +1,91 @@
-"""
-Modul endpoint untuk API Chatbot (LangChain).
-"""
-
 from fastapi import APIRouter, HTTPException
 from app.schemas.chat import ChatInputSchema, ChatOutputSchema
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
-from dotenv import load_dotenv
-import os
+from app.services.agent_service import agent_service
+import logging
 
-load_dotenv()
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-if not os.getenv("OPENAI_API_KEY"):
-    print("PERINGATAN: OPENAI_API_KEY tidak ditemukan di file .env")
 
 @router.post(
     "/",
     response_model=ChatOutputSchema,
-    summary="Interaksi dengan Chatbot",
-    description="Mengirimkan pertanyaan ke Agent AI (LangChain) dan menerima respons.",
+    summary="Interaksi dengan Chatbot AI",
+    description="Mengirimkan pertanyaan ke Agent AI dan menerima respons. "
+                "Chatbot dapat membantu memprediksi kerusakan mesin, "
+                "memberikan status mesin, dan menjawab query tentang maintenance.",
+    responses={
+        200: {"description": "Chatbot berhasil merespons"},
+        503: {"description": "AI Agent tidak tersedia"}
+    }
 )
 async def handle_chat(data: ChatInputSchema) -> ChatOutputSchema:
     """
     Fungsi utama untuk memproses input pengguna dan menghasilkan respons chatbot.
+
+    Args:
+        data (ChatInputSchema): Input query dari pengguna
+
+    Returns:
+        ChatOutputSchema: Respons dari chatbot
+
+    Raises:
+        HTTPException: Jika agent tidak tersedia atau terjadi kesalahan
     """
-    
     try:
-        llm = ChatOpenAI(model="gpt-4o-mini") 
+        if not agent_service.is_available():
+            raise HTTPException(
+                status_code=503,
+                detail="AI Agent tidak tersedia. Pastikan OPENAI_API_KEY sudah dikonfigurasi."
+            )
 
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", "Anda adalah asisten AI yang membantu memantau kondisi mesin."),
-            ("user", "{query}")
-        ])
+        response = await agent_service.chat(data.query)
 
-        chain = prompt | llm
+        return ChatOutputSchema(response=response)
 
-        response = await chain.ainvoke({"query": data.query})
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error pada endpoint chat: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Terjadi kesalahan saat berkomunikasi dengan AI Agent."
+        )
 
-        return ChatOutputSchema(response=response.content)
+@router.get(
+    "/status",
+    summary="Status Chatbot",
+    description="Mengembalikan status ketersediaan chatbot AI."
+)
+async def get_chatbot_status() -> dict:
+    """
+    Endpoint untuk mengecek status chatbot AI.
+
+    Returns:
+        Dict: Status chatbot dan konfigurasi
+    """
+    try:
+        return {
+            "agent_available": agent_service.is_available(),
+            "model": "gpt-4o-mini" if agent_service.is_available() else None,
+            "tools_available": [
+                "predict_machine_failure",
+                "get_machine_status",
+                "get_all_machines_status",
+                "get_high_risk_machines"
+            ] if agent_service.is_available() else [],
+            "example_queries": [
+                "Prediksi mesin M14860",
+                "Mesin mana yang paling berisiko?",
+                "Bagaimana cara mengecek status semua mesin?",
+                "Apa penyebab kerusakan mesin jika suhu tinggi?",
+                "Berikan rekomendasi maintenance untuk mesin dengan torsi tinggi"
+            ]
+        }
 
     except Exception as e:
-        print(f"Error pada endpoint chat: {e}")
+        logger.error(f"Error mendapatkan status chatbot: {e}")
         raise HTTPException(
-            status_code=500, 
-            detail="Terjadi kesalahan saat berkomunikasi dengan layanan AI."
+            status_code=500,
+            detail=f"Terjadi kesalahan: {str(e)}"
         )
